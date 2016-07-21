@@ -15,6 +15,9 @@ using std::endl;
 
 #include <boost/program_options.hpp>
 #include "fast_ig_tools.hpp"
+#include "utils.hpp"
+
+using path::make_dirs;
 
 #include <build_info.hpp>
 
