@@ -43,7 +43,7 @@ namespace vj_finder {
         switch(algorithm_params_.aligner_params.aligner_algorithm) {
         case vj_finder::VJFinderConfig::AlgorithmParams::AlignerParams::AlignerAlgorithm::QuadraticDAGAlignerAlgorithm:
             return std::shared_ptr<algorithms::PairwiseBlockAligner<SubjectDatabase, StringType> >(
-                new algorithms::QuadraticDAGPairwiseBlockAligner<SubjectDatabase, StringType>(kmer_index, kmer_index_helper, scoring, params));
+                new algorithms::QuadraticDAGPairwiseBlockAligner<SubjectDatabase, StringType>(kmer_index, kmer_index_helper, scoring, params, csv_stat_));
         default:
             VERIFY_MSG(false, "Failed to determine block alignment algorithm, using the default one");
         };

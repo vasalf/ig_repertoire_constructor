@@ -34,6 +34,7 @@ namespace cdr_labeler {
         INFO("Alignment against VJ germline segments");
         vj_finder::VJParallelProcessor processor(read_archive, config_.vj_finder_config.algorithm_params,
                                                  labeled_v_db, labeled_j_db,
+                                                 config_.output_params.output_dir,
                                                  config_.run_params.num_threads);
         vj_finder::VJAlignmentInfo alignment_info = processor.Process();
         INFO(alignment_info.NumVJHits() << " reads were aligned; " << alignment_info.NumFilteredReads() <<

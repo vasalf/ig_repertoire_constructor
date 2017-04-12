@@ -29,12 +29,16 @@ namespace vj_finder {
 
         std::shared_ptr<BaseFillFixCropProcessor> GetFillFixCropProcessor();
 
+        std::ofstream& csv_stat_;
+        
     public:
         VJQueryProcessor(const VJFinderConfig::AlgorithmParams &params,
                          core::ReadArchive &read_archive,
+                         std::ofstream& csv_stat,
                          const germline_utils::CustomGeneDatabase &v_db,
                          const germline_utils::CustomGeneDatabase &j_db) : params_(params),
                                                                            read_archive_(read_archive),
+                                                                           csv_stat_(csv_stat),
                                                                            v_db_(v_db),
                                                                            j_db_(j_db) { }
 

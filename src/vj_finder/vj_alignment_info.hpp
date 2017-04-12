@@ -18,6 +18,8 @@ namespace vj_finder {
         void UpdateChainTypeMap(const VJHits &vj_hits);
 
     public:
+        std::ofstream csv_stat;
+        
         VJAlignmentInfo() { }
 
         void UpdateHits(VJHits vj_hits);

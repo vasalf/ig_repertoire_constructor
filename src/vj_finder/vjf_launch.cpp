@@ -27,6 +27,7 @@ namespace vj_finder {
         INFO("Generation of DB for join segments...");
         germline_utils::CustomGeneDatabase j_db = db_generator.GenerateJoinDb();
         VJParallelProcessor processor(read_archive, config_.algorithm_params, v_db, j_db,
+                                      config_.io_params.output_params.output_files.output_dir,
                                       config_.run_params.num_threads);
         INFO("Alignment against VJ germline segments starts");
         VJAlignmentInfo alignment_info = processor.Process();

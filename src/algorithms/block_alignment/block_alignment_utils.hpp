@@ -61,7 +61,8 @@ namespace algorithms {
     std::pair<AlignmentPath, int> weighted_longest_path_in_DAG(const std::vector<Match> &combined,
                                                                const Tf1 &has_edge,
                                                                const Tf2 &edge_weight,
-                                                               const Tf3 &vertex_weight) {
+                                                               const Tf3 &vertex_weight,
+                                                               std::ofstream& csv_stat) {
         VERIFY(combined.size() > 0);
         VERIFY(std::is_sorted(combined.cbegin(), combined.cend(), Match::less_subject_pos));
         // Vertices should be topologically sorted
@@ -71,6 +72,8 @@ namespace algorithms {
         std::vector<size_t> next(combined.size());
         std::iota(next.begin(), next.end(), 0);
 
+        int edge_num = 0;
+        
         for (size_t i = combined.size() - 1; i + 1 > 0; --i) {
             values[i] = vertex_weight(combined[i]);
 
@@ -80,6 +83,7 @@ namespace algorithms {
                 assert(!has_edge(combined[j], combined[i]));
 
                 if (has_edge(combined[i], combined[j])) {
+                    edge_num++;
                     double new_val = vertex_weight(combined[i]) + values[j] + edge_weight(combined[i], combined[j]);
                     if (new_val > values[i]) {
                         next[i] = j;
@@ -89,6 +93,8 @@ namespace algorithms {
             }
         }
 
+        csv_stat << combined.size() << "," << edge_num << std::endl;
+        
         AlignmentPath path;
         path.reserve(combined.size());
 

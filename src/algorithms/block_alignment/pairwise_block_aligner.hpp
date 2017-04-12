@@ -44,6 +44,7 @@ namespace algorithms {
         KmerIndexHelper<SubjectDatabase, StringType> &kmer_index_helper_;
         const BlockAlignmentScoringScheme scoring_;
         const BlockAlignerParams params_;
+        std::ofstream& csv_stat_;
 
         PairwiseBlockAlignment MakeAlignment(const std::vector<Match> &combined,
                                           const StringType &query,
@@ -74,7 +75,7 @@ namespace algorithms {
                        - ((mmatch) ? scoring_.mismatch_opening_cost + mmatch * scoring_.mismatch_extention_cost : 0);
             };
 
-            auto longest_path = weighted_longest_path_in_DAG(combined, has_edge, edge_weight, vertex_weight);
+            auto longest_path = weighted_longest_path_in_DAG(combined, has_edge, edge_weight, vertex_weight, csv_stat_);
             return PairwiseBlockAlignment(longest_path.first,
                                           kmer_index_helper_.GetStringLength(
                                                   kmer_index_helper_.GetDbRecordByIndex(subject_index)),
@@ -111,11 +112,12 @@ namespace algorithms {
     public:
         QuadraticDAGPairwiseBlockAligner(const SubjectQueryKmerIndex<SubjectDatabase, StringType> &kmer_index,
                              KmerIndexHelper<SubjectDatabase, StringType> &kmer_index_helper,
-                             BlockAlignmentScoringScheme scoring, BlockAlignerParams params) :
+                             BlockAlignmentScoringScheme scoring, BlockAlignerParams params,
+                             std::ofstream& csv_stat) :
                 kmer_index_(kmer_index),
                 kmer_index_helper_(kmer_index_helper),
                 scoring_(scoring),
-                params_(params) { }
+                params_(params), csv_stat_(csv_stat) { }
 
         BlockAlignmentHits<SubjectDatabase> Align(const StringType &query) {
             auto result = QueryUnordered(query);

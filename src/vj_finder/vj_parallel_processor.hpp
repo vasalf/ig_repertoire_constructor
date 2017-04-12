@@ -20,14 +20,19 @@ namespace vj_finder {
 
         VJAlignmentInfo GatherAlignmentInfos();
 
+        std::string output_dir_;
+        std::string RandomString();
+        
     public:
         VJParallelProcessor(core::ReadArchive &read_archive,
                             const VJFinderConfig::AlgorithmParams &algorithm_params,
                             const germline_utils::CustomGeneDatabase &v_db,
                             const germline_utils::CustomGeneDatabase &j_db_,
+                            std::string output_dir,
                             size_t num_threads) : read_archive_(read_archive),
                                                   algorithm_params_(algorithm_params),
                                                   v_db_(v_db), j_db_(j_db_),
+                                                  output_dir_(output_dir),
                                                   num_threads_(num_threads) {
             Initialize();
         }
