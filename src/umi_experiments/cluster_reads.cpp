@@ -77,7 +77,7 @@ namespace {
         seqan::SeqFileIn umi_file(params.umi_uncompressed_path.c_str());
         readRecords(umi_ids, umis, umi_file);
         INFO(umi_ids.size() << " UMIs read");
-        VERIFY_MSG(umi_ids.size() == input_ids.size(), "The number of reads should be the same as the number of UMIs")
+        VERIFY_MSG(umi_ids.size() == input_ids.size(), "The number of reads should be the same as the number of UMIs");
 
         std::vector<seqan::Dna5String> compressed_umis;
         INFO("Reading compressed UMIs from " << params.umi_compressed_path);
