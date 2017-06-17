@@ -128,6 +128,10 @@ def main(argv):
     optional_args.add_argument("-h", "--help",
                                action="help",
                                help="Help message and exit")
+    optional_args.add_argument("--profile",
+                               default=False,
+                               action="store_true",
+                               help="Enable CPU profiling")
 
     germline_args = parser.add_argument_group("Germline arguments")
     germline_args.add_argument("-l", "--loci",
@@ -143,8 +147,7 @@ def main(argv):
                                help="Organism: human, mouse, pig, rabbit, rat, rhesus_monkey are available. "
                                "[default: %(default)s]")
     germline_args.add_argument("--no-pseudogenes",
-                               action='store_const',
-                               const=True,
+                               action='store_true',
                                dest="no_pseudogenes",
                                help="Exclusion of pseudogenes for alignment of input reads")
 
@@ -222,13 +225,9 @@ def main(argv):
     else:
         command_line += " --pseudogenes=on"
 
-    env = os.environ.copy()
-    env["CPUPROFILE"] = os.path.abspath(params.output_dir) + "/vjf_prof.out"
+    cpuprofile = os.path.abspath(params.output_dir) + "/vjf_prof.out" if params.profile else None
 
-    cwd = os.getcwd()
-    os.chdir(home_directory)
-    support.sys_call(command_line, log, env=env)
-    os.chdir(cwd)
+    support.sys_call_ex(command_line, log, cpuprofile=cpuprofile)
 
     log.info("Log was written to " + params.log_filename)
 
