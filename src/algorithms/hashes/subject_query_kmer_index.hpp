@@ -4,6 +4,7 @@
 #include "kmer_index_primitives.hpp"
 
 #include <unordered_map>
+#include <memory>
 
 namespace algorithms {
     // SubjectDatabase - type of sequence storage
@@ -26,11 +27,21 @@ namespace algorithms {
         KmerIndexHelper<SubjectDatabase, StringType>& kmer_index_helper_;
 
         // inner structure
-        std::unordered_map<size_t, std::vector<SubjectPosition>> kmer_query_pos_map_;
+        std::map<size_t, std::unique_ptr<SubjectPosition[]>> kmer_query_pos_map_;
+        std::map<size_t, int> kmer_query_pos_sizes_;
+        std::map<size_t, int> kmer_query_pos_index_;
+
+        void UpdateSize(const std::vector<size_t>& str_hashes, size_t str_length, size_t str_index) {
+            for (size_t start = 0; start + k_ <= str_length; ++start) {
+                kmer_query_pos_sizes_[str_hashes[start]]++;
+            }
+	    }
 
         void UpdateMap(const std::vector<size_t>& str_hashes, size_t str_length, size_t str_index) {
             for (size_t start = 0; start + k_ <= str_length; ++start) {
-                kmer_query_pos_map_[str_hashes[start]].push_back({str_index, start});
+                int & i = kmer_query_pos_index_[str_hashes[start]];
+                kmer_query_pos_map_[str_hashes[start]][i] = {str_index, start};
+                i++;
             }
         }
 
@@ -38,10 +49,18 @@ namespace algorithms {
             for (size_t j = 0; j < kmer_index_helper_.GetDbSize(); ++j) {
                 auto s = kmer_index_helper_.GetDbRecordByIndex(j);
                 auto hashes = polyhashes(s, k_);
+                UpdateSize(hashes, kmer_index_helper_.GetStringLength(s), j);
+            }
+            for (auto p : kmer_query_pos_sizes_) {
+                size_t size = p.second;
+                kmer_query_pos_map_[p.first] = std::unique_ptr<SubjectPosition[]>(new SubjectPosition[size]);
+            }
+            for (size_t j = 0; j < kmer_index_helper_.GetDbSize(); ++j) {
+                auto s = kmer_index_helper_.GetDbRecordByIndex(j);
+                auto hashes = polyhashes(s, k_);
                 UpdateMap(hashes, kmer_index_helper_.GetStringLength(s), j);
             }
         }
-
     public:
         SubjectQueryKmerIndex(const SubjectDatabase &db,
                               size_t k,
@@ -58,7 +77,7 @@ namespace algorithms {
             return kmer_query_pos_map_.find(kmer) != kmer_query_pos_map_.end();
         }
 
-        const std::vector<SubjectPosition>& GetSubjectPositions(size_t kmer) const {
+        const std::unique_ptr<SubjectPosition[]>& GetSubjectPositions(size_t kmer) const {
             VERIFY_MSG(SubjectsContainKmer(kmer), "Subjects do not contain kmer " << kmer);
             return kmer_query_pos_map_.at(kmer);
         }
@@ -76,9 +95,11 @@ namespace algorithms {
                 auto kmer = query_hashes[j];
                 if(!SubjectsContainKmer(kmer))
                     continue;
-                auto subj_pos = GetSubjectPositions(kmer);
+                const auto& subj_pos = GetSubjectPositions(kmer);
                 //for (const auto &p : subj_it.second) {
-                for(auto it = subj_pos.begin(); it != subj_pos.end(); it++) {
+                //for(auto it = subj_pos.begin(); it != subj_pos.end(); it++) {
+                for (int i = 0; i < kmer_query_pos_sizes_.at(kmer); i++) {
+                    auto it = &subj_pos[i];
                     size_t kmer_pos_in_query = j;
                     size_t kmer_pos_in_subject = it->position; // p.position;
                     subj_kmer_matches.Update(it->subject_index, {static_cast<int>(kmer_pos_in_subject),
