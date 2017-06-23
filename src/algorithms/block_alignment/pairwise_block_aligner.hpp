@@ -51,6 +51,8 @@ namespace algorithms {
             auto has_edge = [this](const Match &a, const Match &b) -> bool {
                 int read_gap = b.read_pos - a.read_pos;
                 int needle_gap = b.subject_pos - a.subject_pos;
+                if (read_gap == 0 && needle_gap == 0) return false;
+                return read_gap >= 0 && needle_gap >= 0;
                 int gap = read_gap - needle_gap;
                 if (gap > scoring_.max_local_insertions || -gap > scoring_.max_local_deletions) return false;
                 // Crossing check
@@ -59,10 +61,12 @@ namespace algorithms {
             };
 
             auto vertex_weight = [this](const Match &m) -> double {
+                return 1;
                 return double(m.length) * double(scoring_.match_reward);
             };
 
             auto edge_weight = [this](const Match &a, const Match &b) -> double {
+                return 0;
                 int read_gap = b.read_pos - a.read_pos;
                 int needle_gap = b.subject_pos - a.subject_pos;
                 int gap = read_gap - needle_gap;
