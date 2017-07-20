@@ -1,248 +1,57 @@
-#include <cassert>
-#include <algorithm>
-
-#include <unordered_map>
-#include <build_info.hpp>
-
+#include <string>
+#include <limits>
+#include <cstddef>
 #include <iostream>
+#include <functional>
+#include <memory>
 #include <sstream>
-using std::cout;
 
 #include <boost/program_options.hpp>
-namespace po = boost::program_options;
-
 #include <boost/algorithm/string.hpp>
 
-#include "fast_ig_tools.hpp"
-#include "ig_final_alignment.hpp"
-#include "ig_matcher.hpp"
+#include <build_info.hpp>
 #include "utils.hpp"
+#include "fast_ig_tools.hpp"
 
 #include <seqan/seq_io.h>
-#undef NDEBUG
-#include <cassert>
 
-using seqan::Dna5String;
-using seqan::SeqFileIn;
-using seqan::SeqFileOut;
-using seqan::CharString;
-
-
-std::unordered_map<std::string, std::string> read_rcm_file(const std::string &file_name) {
-    std::ifstream rcm(file_name.c_str());
-
-    std::unordered_map<std::string, std::string> result;
-
-    std::string id, target;
-    std::string line;
-    while (std::getline(rcm, line)) {
-        std::vector<std::string> strs;
-        boost::split(strs, line, boost::is_any_of("\t"));
-        for (auto &s : strs) {
-            boost::trim(s);
-        }
-        if (strs.size() == 2 && strs[0] != "" && strs[1] != "") {
-            result[strs[0]] = strs[1];
-        }
-    }
-
-    return result;
-}
-
-
-template<typename T = seqan::Dna5>
-void split_component(const std::vector<seqan::String<T>> &reads,
-                     const std::vector<size_t> &indices,
-                     std::vector<std::pair<seqan::String<T>, std::vector<size_t>>> &out,
-                     size_t max_votes = 1,
-                     bool discard = false,
-                     bool recursive = true,
-                     bool flu = true) {
-    if (!max_votes) {
-        max_votes = std::numeric_limits<size_t>::max() / 2;
-    }
-
-    if (indices.size() == 0) {
-        return;
-    }
-
-    if (indices.size() == 1) {
-        out.push_back({ reads[indices[0]], indices });
-        return;
-    }
-
-    using namespace seqan;
-
-    String<ProfileChar<T>> profile;
-
-    size_t len = 0;
-    for (size_t i : indices) {
-        len = std::max(len, length(reads[i]));
-    }
-
-    resize(profile, len);
-
-    for (size_t i : indices) {
-        const auto &read = reads[i];
-        for (size_t j = 0; j < length(read); ++j) {
-            profile[j].count[ordValue(read[j])] += 1;
-        }
-    }
-
-    // Find secondary votes
-    struct PositionVote {
-        size_t majory_votes;
-        size_t majory_letter;
-        size_t secondary_votes;
-        size_t secondary_letter;
-        size_t position;
-        bool operator<(const PositionVote &b) const {
-            return secondary_votes < b.secondary_votes;
-        }
-    };
-
-    // INFO("Splitting component size=" << indices.size() << " len=" << len);
-    size_t min_len = length(reads[indices[0]]);
-    for (size_t i : indices) {
-        min_len = std::min(min_len, length(reads[i]));
-    }
-
-    std::vector<PositionVote> secondary_votes;
-    for (size_t j = 0; j < min_len; ++j) {
-        std::vector<std::pair<size_t, size_t>> v;
-        for (size_t k = 0; k < 4; ++k) {
-            v.push_back({ profile[j].count[k], k });
-        }
-
-        // Use nth element here???
-        std::sort(v.rbegin(), v.rend());
-        secondary_votes.push_back({ v[0].first, v[0].second, v[1].first, v[1].second, j });
-    }
-
-    auto maximal_mismatch = *std::max_element(secondary_votes.cbegin(), secondary_votes.cend());
-    VERIFY(maximal_mismatch.majory_votes >= maximal_mismatch.secondary_votes);
-
-    TRACE("VOTES: " << maximal_mismatch.majory_votes << "/" << maximal_mismatch.secondary_votes << " POSITION: " << maximal_mismatch.position);
-    bool do_split = false;
-    auto mmsv = maximal_mismatch.secondary_votes;
-
-    if (flu) {
-        do_split = -0.0064174097073423269 * static_cast<double>(indices.size()) + 0.79633984048973583 * static_cast<double>(mmsv) - 4.3364230321953841 > 0;
-    } else {
-        do_split = mmsv >= max_votes;
-    }
-    if (indices.size() <= 5) {
-        do_split = false;
-    }
-
-    if (max_votes > indices.size()) {
-        do_split = false;
-    }
-
-    if (! do_split) {
-        seqan::String<T> consensus;
-        for (size_t i = 0; i < length(profile); ++i) {
-            size_t idx = getMaxIndex(profile[i]);
-            if (idx < ValueSize<T>::VALUE) {  // is not gap  TODO Check it!!
-                appendValue(consensus, T(getMaxIndex(profile[i])));
-            }
-        }
-
-        out.push_back({ consensus, indices });
-        return;
-    }
-
-    std::vector<size_t> indices_majory, indices_secondary, indices_other;
-    for (size_t i : indices) {
-        if (seqan::ordValue(reads[i][maximal_mismatch.position]) == maximal_mismatch.majory_letter) {
-            indices_majory.push_back(i);
-        } else if (seqan::ordValue(reads[i][maximal_mismatch.position]) == maximal_mismatch.secondary_letter) {
-            indices_secondary.push_back(i);
-        } else {
-            indices_other.push_back(i);
-        }
-    }
-
-    VERIFY(indices_majory.size() == maximal_mismatch.majory_votes);
-    VERIFY(indices_secondary.size() == maximal_mismatch.secondary_votes);
-
-    auto majory_consensus = consensus_hamming(reads, indices_majory);
-    auto secondary_consensus = consensus_hamming(reads, indices_secondary);
-
-    for (size_t i : indices_other) {
-        auto dist_majory = hamming_rtrim(reads[i], majory_consensus);
-        auto dist_secondary = hamming_rtrim(reads[i], secondary_consensus);
-
-        if (dist_majory <= dist_secondary) {
-            indices_majory.push_back(i);
-        } else {
-            indices_secondary.push_back(i);
-        }
-    }
-
-    VERIFY(indices_majory.size() + indices_secondary.size() == indices.size());
-    VERIFY(indices_majory.size() <= indices.size());
-
-    INFO("Component splitted " << indices_majory.size() << " + " << indices_secondary.size());
-
-    if (!recursive) {
-        max_votes = 0;
-    }
-
-    split_component(reads, indices_majory, out, max_votes, discard, flu);
-
-    if (discard) {
-        for (size_t index : indices_secondary) {
-            out.push_back({ reads[index], { index } });
-        }
-    } else {
-        VERIFY(indices_secondary.size() < indices.size());
-        split_component(reads, indices_secondary, out, max_votes, discard, flu);
-    }
-}
-
-
-template<typename T = seqan::Dna5>
-std::vector<std::pair<seqan::String<T>, std::vector<size_t>>> split_component(const std::vector<seqan::String<T>> &reads,
-                                                                              const std::vector<size_t> &indices,
-                                                                              size_t max_votes = 0,
-                                                                              bool discard = false,
-                                                                              bool recursive = true,
-                                                                              bool flu = true) {
-    if (!max_votes) {
-        max_votes = std::numeric_limits<size_t>::max() / 2;
-    }
-
-    std::vector<std::pair<seqan::String<T>, std::vector<size_t>>> result;
-    split_component(reads, indices, result, max_votes, discard, recursive, flu);
-
-    return result;
-}
-
-
-int main(int argc, char **argv) {
-    segfault_handler sh;
-    perf_counter pc;
-    create_console_logger("");
-
-    INFO("Command line: " << join_cmd_line(argc, argv));
-
-    int nthreads = 4;
+struct IgComponentSplitterConfig {
+    // Paths
     std::string reads_file;
-    std::string output_file;
     std::string rcm_file;
+    std::string output_file;
     std::string output_rcm_file;
     std::string config_file;
-    size_t max_votes = std::numeric_limits<size_t>::max() / 2;
+
+    // Launch options
+    int nthreads = 4;
+    std::size_t max_votes = std::numeric_limits<std::size_t>::max() / 2;
     bool discard = false;
-    bool recursive = true;
+    bool recursive = false;
     bool flu = false;
     bool allow_unassigned = false;
 
-    // Parse cmd-line arguments
-    try {
-        // Declare a group of options that will be
-        // allowed only on command line
+    void Write() {
+        INFO("reads_file=" << reads_file);
+        INFO("rcm_file=" << rcm_file);
+        INFO("output_file=" << output_file);
+        INFO("output_rcm_file=" << output_rcm_file);
+        INFO("config_file=" << config_file);
+        INFO("nthreads=" << nthreads);
+        INFO("max_votes=" << max_votes);
+        INFO("discard=" << std::boolalpha << discard);
+        INFO("recursive=" << std::boolalpha << recursive);
+        INFO("flu=" << std::boolalpha << flu);
+        INFO("allow_unassigned=" << std::boolalpha << allow_unassigned);
+    }
+    
+    IgComponentSplitterConfig() {}
+    
+    void ReadOptions(int argc, char **argv) {
+        namespace po = boost::program_options;
+
+        // Declare a group of options that are
+        // only allowed on a command line
         po::options_description generic("Generic options");
         generic.add_options()
             ("version,v", "print version string")
@@ -258,14 +67,14 @@ int main(int argc, char **argv) {
             ("output-rcm-file,M", po::value<std::string>(&output_rcm_file)->default_value(output_rcm_file),
              "output RCM-file");
 
-        // Declare a group of options that will be
+        // Declare a group of options that are
         // allowed both on command line and in
         // config file
         po::options_description config("Configuration");
         config.add_options()
             ("threads,t", po::value<int>(&nthreads)->default_value(nthreads),
              "the number of parallel threads")
-            ("max-votes,V", po::value<size_t>(&max_votes)->default_value(max_votes),
+            ("max-votes,V", po::value<std::size_t>(&max_votes)->default_value(max_votes),
              "max secondary votes threshold")
             ("discard,D", po::value<bool>(&discard)->default_value(discard),
              "whether to discard secondary votes")
@@ -274,162 +83,318 @@ int main(int argc, char **argv) {
             ("flu,F", po::value<bool>(&flu)->default_value(flu),
              "Use FLU preset")
             ("allow-unassigned,A", po::value<bool>(&allow_unassigned)->default_value(allow_unassigned),
-             "Allow unassigned reads in RCM")
-            ;
+             "Allow unassigned reads in RCM");
 
-        // Hidden options, will be allowed both on command line and
-        // in config file, but will not be shown to the user.
+        // Declare a group of options that are
+        // allowed both on command line and in
+        // config file but are not shown to user.
         po::options_description hidden("Hidden options");
         hidden.add_options()
-            ("help-hidden", "show all options, including developers' ones")
-            ;
-
+            ("help-hidden", "show all options, including developers' ones");
+        
         po::options_description cmdline_options("All command line options");
-        cmdline_options.add(generic).add(config).add(hidden);
-
+        cmdline_options
+            .add(generic)
+            .add(config)
+            .add(hidden);
         po::options_description config_file_options;
-        config_file_options.add(config).add(hidden);
+        config_file_options
+            .add(config)
+            .add(hidden);
+        po::options_description visible_options("Allowed options");
+        visible_options
+            .add(generic)
+            .add(config);
 
-        po::options_description visible("Allowed options");
-        visible.add(generic).add(config);
-
-        po::positional_options_description p;
-        p.add("input-file", 1);
-
+        po::positional_options_description positional_options;
+        positional_options
+            .add("input-file", 1);
+        
         po::variables_map vm;
-        store(po::command_line_parser(argc, argv).
-              options(cmdline_options).run(), vm);
-        notify(vm);
+        po::store(po::command_line_parser(argc, argv)
+                  .options(cmdline_options)
+                  //.positional(positional_options)
+                  .run(), vm);
+        po::notify(vm);
 
         if (vm.count("help-hidden")) {
-            cout << cmdline_options << std::endl;
-            return 0;
+            std::cout << cmdline_options << std::endl;
+            std::exit(0);
         }
 
         if (vm.count("help")) {
-            cout << visible << std::endl;
-            return 0;
+            std::cout << visible_options << std::endl;
+            std::exit(0);
         }
 
         if (vm.count("version")) {
-            cout << bformat("IG Component Splitter, part of IgReC version %s; git version: %s") % build_info::version % build_info::git_hash7 << std::endl;
-            return 0;
+            std::cout << "IG Component Splitter, part of IgReC version "
+                      << build_info::version
+                      << "; git version: "
+                      << build_info::git_hash7
+                      << std::endl;
+            std::exit(0);
         }
 
         if (vm.count("config-file")) {
-            std::string config_file = vm["config-file"].as<std::string>();
-
-            std::ifstream ifs(config_file.c_str());
-            if (!ifs) {
-                cout << "can not open config file: " << config_file << "\n";
-                return 0;
+            std::ifstream config(vm["config-file"].as<std::string>());
+            if (!config) {
+                std::cout << "could not open config file " << vm["config-file"].as<std::string>() << std::endl;
+                std::exit(1);
             } else {
-                store(parse_config_file(ifs, config_file_options), vm);
+                po::store(po::parse_config_file(config, config_file_options), vm);
+                po::notify(vm);
                 // reparse cmd line again for update config defaults
-                store(po::command_line_parser(argc, argv).
-                      options(cmdline_options).positional(p).run(), vm);
+                po::store(po::command_line_parser(argc, argv)
+                          .options(cmdline_options)
+                          .positional(positional_options)
+                          .run(), vm);
+                po::notify(vm);
+            }
+        }
+    }
+};
+
+struct Read {
+    seqan::Dna5String read;
+    seqan::CharString id;
+    Read(seqan::Dna5String& read_, seqan::CharString id_)
+        : read(read_), id(id_) {}
+};
+
+template<class StringType>
+class Component : public std::vector<std::shared_ptr<Read> > {
+    StringType id_;
+    seqan::Dna5String consensus_;
+public:
+    Component() {}
+    
+    Component(const StringType& id)
+        : std::vector<std::shared_ptr<Read> >(),
+        id_(id) {}
+
+    virtual ~Component() = default;
+    
+    const StringType& GetId() {
+        return id_;
+    }
+
+    bool operator<(const Component &other) const {
+        return id_ < other.id_;
+    }
+
+    seqan::Dna5String & Consensus() {
+        return consensus_;
+    }
+};
+
+template<typename key, typename value>
+class StdMapTag : public std::map<key, value> {};
+
+template<typename key, typename value>
+class StdUnorderedMapTag : public std::unordered_map<key, value> {};
+
+template<template<typename,typename> class map_type>
+class InputData {
+    map_type<std::string, Component<std::string> > components_;
+    map_type<std::string, std::string> rcm_;
+    std::vector<std::shared_ptr<Read> > reads_;
+
+    void read_rcm_file(std::string file_name) {
+        std::ifstream rcm(file_name);
+        if (!rcm) {
+            // TODO: throw an exception
+            ERROR("Could not open RCM file " << file_name);
+            std::exit(1);
+        }
+
+        std::string id, target;
+        std::string line;
+        while (std::getline(rcm, line)) {
+            std::vector<std::string> strs;
+            boost::split(strs, line, boost::is_any_of("\t"));
+            for (auto &s : strs) {
+                boost::trim(s);
+            }
+            if (strs.size() == 2 && strs[0] != "" && strs[1] != "") {
+                rcm_[strs[0]] = strs[1];
+            }
+        }
+    }
+
+    void add_read_record(std::string s_id, Read&& r) {
+        reads_.push_back(std::make_shared<Read>(r));
+        if (!components_.count(s_id))
+            components_[s_id] = Component<std::string>(s_id);
+        components_[s_id].push_back(reads_.back());
+    }
+    
+public:
+    InputData() {}
+
+    void ReadData(const IgComponentSplitterConfig &cfg) {
+        INFO("Input files: " << cfg.reads_file << ", " << cfg.rcm_file);
+
+        std::vector<seqan::Dna5String> input_reads;
+        std::vector<seqan::CharString> input_ids;
+        // TODO: throw an exception on failure
+        seqan::SeqFileIn seqinput(cfg.reads_file.c_str());
+
+        INFO("Reading input reads starts");
+        seqan::readRecords(input_ids, input_reads, seqinput);
+        INFO(input_reads.size() << " reads were extracted from " << cfg.reads_file);
+
+        INFO("Reading read-cluster map starts");
+        read_rcm_file(cfg.rcm_file);
+
+        std::size_t assigned_reads = 0;
+        for (std::size_t i = 0; i != input_reads.size(); i++) {
+            std::string id = seqan::toCString(input_ids[i]);
+            if (rcm_.count(id))
+                assigned_reads++;
+            else
+                TRACE("Read " << id <<  " not found in RCM " << cfg.rcm_file);
+            add_read_record(rcm_[id], Read(input_reads[i], input_ids[i]));
+        }
+
+        INFO(assigned_reads << " over " << input_reads.size() << " reads assigned");
+        if (assigned_reads < input_reads.size() && !cfg.allow_unassigned) {
+            ERROR(input_reads.size() - assigned_reads << " unassigned reads in RCM " << cfg.rcm_file);
+            ERROR("Unassigned reads are not allowed");
+            ERROR("Pass option '--allow-unassigned=true' to allow");
+            // TODO: exception
+            std::exit(1);
+        }
+
+        INFO(components_.size() << " clusters were extracted from " << cfg.rcm_file);
+
+        std::size_t max_component_size = 0;
+        for (const auto& kv : components_) {
+            max_component_size = std::max(max_component_size, kv.second.size());
+        }
+        INFO("Size of maximal cluster: " << max_component_size);
+    }
+
+    map_type<std::string, Component<std::string> > & Components() {
+        return components_;
+    }
+
+    std::vector<Read> & Reads() {
+        return reads_;
+    }
+};
+
+template<template<typename,typename> class map_type>
+class SplitterAlgorithm {
+protected:
+    IgComponentSplitterConfig &cfg_;
+    InputData<map_type> &input_;
+public:
+    SplitterAlgorithm(IgComponentSplitterConfig &cfg,
+                      InputData<map_type> &input)
+        : cfg_(cfg), input_(input) {}
+
+    virtual ~SplitterAlgorithm() = default;
+    
+    virtual std::vector<Component<std::string> > SplitComponent(Component<std::string> &component) = 0;
+};
+
+template<template<typename,typename> class map_type>
+class DummySplitterAlgorithm : public SplitterAlgorithm<map_type> {
+public:
+    DummySplitterAlgorithm(IgComponentSplitterConfig &cfg,
+                           InputData<map_type> &input)
+        : SplitterAlgorithm<map_type>(cfg, input) {}
+
+    virtual ~DummySplitterAlgorithm() {}
+
+    virtual std::vector<Component<std::string> > SplitComponent(Component<std::string> &component) override {
+        // TODO...
+        component.Consensus() = component[0]->read;
+        return { component };
+    }
+};
+
+// TODO: write a parallel processor here
+template<template<typename,typename> class map_type>
+class IgComponentSplitterProcessor {
+    IgComponentSplitterConfig &cfg_;
+    InputData<map_type> &input_;
+    
+public:
+    IgComponentSplitterProcessor(IgComponentSplitterConfig &cfg,
+                                 InputData<map_type> &input)
+        : cfg_(cfg), input_(input) {}
+
+    void Process() {
+        std::vector<Component<std::string> > components;
+        for (auto &p : input_.Components())
+            components.push_back(p.second);
+        std::sort(components.begin(), components.end());
+
+        seqan::SeqFileOut seq_output(cfg_.output_file.c_str());
+        std::ofstream out_rcm(cfg_.output_rcm_file.c_str());
+
+        /*
+        std::unique_ptr<SplitterAlgorithm<map_type> > splitter
+            = std::make_unique<DummySplitterAlgorithm<map_type> >(cfg_, input_);
+        */
+        std::unique_ptr<SplitterAlgorithm<map_type> > splitter(new DummySplitterAlgorithm<map_type>(cfg_, input_));
+
+        for (auto &component : components) {
+            auto result = splitter->SplitComponent(component);
+            for (std::size_t i = 0; i != result.size(); i++) {
+                std::ostringstream cluster_id;
+                cluster_id << component.GetId();
+                if (result.size() > 1)
+                    cluster_id << "X" << i;
+                
+                std::ostringstream id;
+                id << "cluster___"
+                   << cluster_id.str()
+                   << "___size___"
+                   << result[i].size();
+
+                seqan::writeRecord(seq_output, id.str(), result[i].Consensus());
+                for (auto& read : result[i]) {
+                    std::string read_id = seqan::toCString(read->id);
+                    out_rcm << read_id << "\t" << cluster_id.str() << "\n";
+                }
             }
         }
 
-        try {
-            notify(vm);
-        } catch (po::error &e) {
-            cout << "Parser error: " << e.what() << std::endl;
-        }
-    } catch(std::exception& e) {
-        std::cerr << e.what() << std::endl;
-        return 1;
+        INFO("Final repertoire was written to " << cfg_.output_file);
+        INFO("Final RCM was written to " << cfg_.output_rcm_file);
     }
+};
+
+int main(int argc, char *argv[]) {
+    segfault_handler sh;
+    perf_counter pc;
+    create_console_logger("");
 
     INFO("Command line: " << join_cmd_line(argc, argv));
-    INFO("Input files: " << reads_file << ", " << rcm_file);
 
-    std::vector<Dna5String> input_reads;
-    std::vector<CharString> input_ids;
-    SeqFileIn seqFileIn_input(reads_file.c_str());
+    IgComponentSplitterConfig cfg;
 
-    INFO("Reading input reads starts");
-    readRecords(input_ids, input_reads, seqFileIn_input);
-    INFO(input_reads.size() << " reads were extracted from " << reads_file);
-
-    std::vector<size_t> component_indices;
-    component_indices.resize(input_reads.size());
-
-    INFO("Reading read-cluster map starts");
-    const auto rcm = read_rcm_file(rcm_file);
-
-    std::unordered_map<std::string, std::vector<size_t>> comp2readnum;
-
-    size_t assigned_reads = 0;
-    for (size_t i = 0; i < input_reads.size(); ++i) {
-        std::string id = toCString(input_ids[i]);
-        auto pcomponent = rcm.find(id);
-        if (pcomponent != rcm.end()) {
-            comp2readnum[pcomponent->second].push_back(i);
-            ++assigned_reads;
-        } else {
-            TRACE("Read " << id <<  " not found in RCM " << rcm_file);
-        }
-    }
-
-    INFO(assigned_reads << " over " << input_reads.size() << " reads assigned");
-    if (assigned_reads < input_reads.size() && !allow_unassigned) {
-        ERROR(input_reads.size() - assigned_reads << " unassigned reads in RCM " << rcm_file);
-        ERROR("Unassigned reads are not allowed");
-        ERROR("Pass option '--allow-unassigned=true' to allow");
+    try {
+        cfg.ReadOptions(argc, argv);
+    } catch(boost::program_options::error &e) {
+        std::cout << "Parser error: " << e.what() << std::endl;
+        return 1;
+    } catch(std::exception &e) {
+        std::cout << e.what() << std::endl;
         return 1;
     }
+    cfg.Write();
 
-    INFO(comp2readnum.size() << " clusters were extracted from " << rcm_file);
+    InputData<StdUnorderedMapTag> input;
+    input.ReadData(cfg);
 
-    size_t max_component_size = 0;
-    for (const auto &kv : comp2readnum) {
-        max_component_size = std::max(max_component_size, kv.second.size());
-    }
-    INFO(bformat("Size of maximal cluster: %d") % max_component_size);
-
-    omp_set_num_threads(nthreads);
-    INFO(bformat("Computation of consensus using %d threads starts") % nthreads);
-    INFO("Saving results");
-
-    SeqFileOut seqFileOut_output(output_file.c_str());
-
-    std::ofstream out_rcm(output_rcm_file.c_str());
-
-
-    std::vector<std::pair<std::string, std::vector<size_t>>> comp2readnum_sorted(comp2readnum.cbegin(), comp2readnum.cend());
-    std::sort(comp2readnum_sorted.begin(), comp2readnum_sorted.end());
-
-    // TODO Use multithreading
-    for (const auto &kv : comp2readnum_sorted) {
-        const auto &comp = kv.first;
-        const auto &indices = kv.second;
-        auto result = split_component(input_reads, indices, max_votes, discard, recursive, flu);
-        for (size_t i = 0; i < result.size(); ++i) {
-            std::stringstream ss(comp);
-            if (result.size() > 1) {
-                ss << "X" << i;
-            }
-            std::string cluster_id = ss.str();
-
-            bformat fmt("cluster___%s___size___%d");
-            fmt % cluster_id % result[i].second.size();
-            std::string id = fmt.str();
-
-            seqan::writeRecord(seqFileOut_output, id, result[i].first);
-            for (size_t read_index : result[i].second) {
-                std::string read_id = seqan::toCString(input_ids[read_index]);
-                out_rcm << read_id << "\t" << cluster_id << "\n";
-            }
-        }
-    }
-
-    INFO("Final repertoire was written to " << output_file);
-    INFO("Final RCM was written to " << output_rcm_file);
+    IgComponentSplitterProcessor<StdUnorderedMapTag> processor(cfg, input);
+    processor.Process();
 
     INFO("Running time: " << running_time_format(pc));
-
+    
     return 0;
 }
-
-// vim: ts=4:sw=4
