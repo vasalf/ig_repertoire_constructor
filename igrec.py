@@ -6,11 +6,9 @@ import sys
 import logging
 
 home_directory = os.path.abspath(os.path.dirname(os.path.realpath(__file__))) + '/'
-spades_src = os.path.join(home_directory, "src/python_pipeline/")
 
 import dense_subgraph_finder
 
-sys.path.append(spades_src)
 import support
 
 #######################################################################################
@@ -27,7 +25,7 @@ def ErrorMessagePrepareCfg(log):
 def SupportInfo(log):
     log.info("\nIn case you have troubles running IgReC, "
              "you can write to igtools_support@googlegroups.com.")
-    log.info("Please provide us with igrc.log file from the output directory.")
+    log.info("Please provide us with igrec.log file from the output directory.")
 
 #######################################################################################
 #           Binary routines
@@ -351,7 +349,8 @@ class PairReadMerger(Phase):
                                         self.__params.left_reads,
                                         self.__params.right_reads,
                                         self.__params.single_reads)
-        support.sys_call(command_line, self._log)
+        cpuprofile = self.__params.output + "/pair_read_merger_prof.out" if self.__params.profile else None
+        support.sys_call_ex(command_line, self._log, cpuprofile=cpuprofile)
 
     def PrintOutputFiles(self):
         self.__CheckOutputExistance()
@@ -372,34 +371,43 @@ class VJAlignmentPhase(Phase):
 
     def __CheckOutputExistance(self):
         self.__params.io.CheckCroppedReadsExistance()
-        self.__params.io.CheckBadReadsExistance()
-        self.__params.io.CheckVJAlignmentInfoExistance()
+        if not self.__params.no_alignment:
+            self.__params.io.CheckBadReadsExistance()
+            self.__params.io.CheckVJAlignmentInfoExistance()
 
     def Run(self):
         self.__CheckInputExistance()
-        self.__params.vj_finder_output = os.path.join(self.__params.output, "vj_finder")
-        command_line = os.path.abspath(IgRepConConfig().run_vj_aligner) + \
-                       " -i " + os.path.abspath(self.__params.single_reads) + \
-                       " -o " + os.path.abspath(self.__params.io.vj_finder_output) + \
-                       " --db-directory " + os.path.abspath(IgRepConConfig().path_to_germline) + \
-                       " -t " + str(self.__params.num_threads) + \
-                       " --loci " + self.__params.loci + \
-                       " --organism " + self.__params.organism
-        if self.__params.no_pseudogenes:
-            command_line += " --pseudogenes=off"
+        if not self.__params.no_alignment:
+            self.__params.vj_finder_output = os.path.join(self.__params.output, "vj_finder")
+            command_line = os.path.abspath(IgRepConConfig().run_vj_aligner) + \
+                " -i " + os.path.abspath(self.__params.single_reads) + \
+                " -o " + os.path.abspath(self.__params.io.vj_finder_output) + \
+                " --db-directory " + os.path.abspath(IgRepConConfig().path_to_germline) + \
+                " -t " + str(self.__params.num_threads) + \
+                " --loci " + self.__params.loci + \
+                " --organism " + self.__params.organism
+            if self.__params.no_pseudogenes:
+                command_line += " --pseudogenes=off"
+            else:
+                command_line += " --pseudogenes=on"
+
+            cpuprofile = self.__params.output + "/vjf_prof.out" if self.__params.profile else None
+
+            cwd = os.getcwd()
+            os.chdir(home_directory)
+            support.sys_call_ex(command_line, self._log, cpuprofile=cpuprofile)
+            os.chdir(cwd)
         else:
-            command_line += " --pseudogenes=on"
-        cwd = os.getcwd()
-        os.chdir(home_directory)
-        support.sys_call(command_line, self._log)
-        os.chdir(cwd)
+            self._log.info("VJ Finder stage skipped")
+            self.__params.io.cropped_reads = self.__params.single_reads
 
     def PrintOutputFiles(self):
         self.__CheckOutputExistance()
-        self._log.info("\nOutput files: ")
-        self._log.info("  * Cleaned Ig-Seq reads were written to " + self.__params.io.cropped_reads)
-        self._log.info("  * Contaminated (not Ig-Seq) reads were written to " + self.__params.io.bad_reads)
-        self._log.info("  * VJ alignment output was written to " + self.__params.io.vj_alignment_info)
+        if not self.__params.no_alignment:
+            self._log.info("\nOutput files: ")
+            self._log.info("  * Cleaned Ig-Seq reads were written to " + self.__params.io.cropped_reads)
+            self._log.info("  * Contaminated (not Ig-Seq) reads were written to " + self.__params.io.bad_reads)
+            self._log.info("  * VJ alignment output was written to " + self.__params.io.vj_alignment_info)
 
 ###########
 class TrieCompressionPhase(Phase):
@@ -419,7 +427,8 @@ class TrieCompressionPhase(Phase):
         self.__CheckInputExistance()
         command_line = IgRepConConfig().run_trie_compressor + " -i " + self.__params.io.cropped_reads + \
                     " -o " + self.__params.io.compressed_reads + " -m " + self.__params.io.map_file + " -Toff"
-        support.sys_call(command_line, self._log)
+        cpuprofile = self.__params.output + "/trie_compressor_prof.out" if self.__params.profile else None
+        support.sys_call_ex(command_line, self._log, cpuprofile=cpuprofile)
 
         command_line = IgRepConConfig().run_triecmp_to_repertoire + " -i " + self.__params.io.cropped_reads + \
                        " -c " + self.__params.io.compressed_reads + " -m " + self.__params.io.map_file + \
@@ -460,7 +469,8 @@ class GraphConstructionPhase(Phase):
         command_line = IgRepConConfig().run_graph_constructor + " -i " + self.__params.io.compressed_reads + \
                        " -o " + self.__params.io.sw_graph + " -t " + str(self.__params.num_threads) + \
                        " --tau=" + str(self.__params.max_mismatches) + " -A" + " -Toff"
-        support.sys_call(command_line, self._log)
+        cpuprofile = self.__params.output + "/graph_constructor_prof.out" if self.__params.profile else None
+        support.sys_call_ex(command_line, self._log, cpuprofile=cpuprofile)
 
     def PrintOutputFiles(self):
         self.__CheckOutputExistance()
@@ -533,7 +543,8 @@ class ConsensusConstructionPhase(Phase):
                        " -t " + str(self.__params.num_threads) + \
                        " -D " + str(self.__params.discard) + \
                        " --max-votes " + str(self.__params.max_votes)
-        support.sys_call(command_line, self._log)
+        cpuprofile = self.__params.output + "/consensus_constructor_prof.out" if self.__params.profile else None
+        support.sys_call_ex(command_line, self._log, cpuprofile=cpuprofile)
 
 
     def PrintOutputFiles(self):
@@ -672,7 +683,7 @@ def CreateLogger():
     log.setLevel(logging.DEBUG)
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(logging.Formatter('%(message)s'))
-    console.setLevel(logging.DEBUG)
+    console.setLevel(logging.INFO)
     log.addHandler(console)
     return log
 
@@ -721,7 +732,7 @@ def ParseCommandLineParams(log):
             super(ActionTest, self).__init__(option_strings, dest, nargs=0, **kwargs)
 
         def __call__(self, parser, namespace, values, option_string=None):
-            setattr(namespace, "single_reads", "test_dataset/merged_reads.fastq")
+            setattr(namespace, "single_reads", os.path.join(home_directory, "test_dataset/merged_reads.fastq"))
             setattr(namespace, "loci", "all")
             setattr(namespace, "output", "igrec_test")
 
@@ -777,6 +788,10 @@ def ParseCommandLineParams(log):
                                dest="min_snode_size",
                                help="Minimum super read size [default: %(default)d]")
 
+    optional_args.add_argument("--profile",
+                               action="store_true",
+                               default=False,
+                               help="Enable CPU profiling")
     optional_args.add_argument("-h", "--help",
                                action="store_const",
                                const=True,
@@ -886,7 +901,7 @@ def CheckGeneralParamsCorrectness(parser, params, log):
         log.info("ERROR: Output directory (-o) was not specified\n")
         HelpString()
         sys.exit(-1)
-    if not "loci" in params or params.loci == "":
+    if not params.no_alignment and ("loci" not in params or params.loci == ""):
         log.info("ERROR: Immunological loci (-l) was not specified\n")
         HelpString()
         sys.exit(1)
@@ -937,10 +952,11 @@ def PrintParams(params, log):
     log.info("  Entry point:\t\t\t" + params.entry_point)
 
 def CreateFileLogger(params, log):
-    params.log_filename = os.path.join(params.output, "igrc.log")
+    params.log_filename = os.path.join(params.output, "igrec.log")
     if os.path.exists(params.log_filename):
         os.remove(params.log_filename)
     log_handler = logging.FileHandler(params.log_filename, mode='a')
+    log_handler.setLevel(logging.DEBUG)
     log.addHandler(log_handler)
     log.info("Log will be written to " + params.log_filename + "\n")
 
@@ -982,6 +998,36 @@ def PrintOutputFiles(params, log):
     if os.path.exists(params.io.final_stripped_clusters_fa):
         log.info("  * Highly abundant antibody clusters of final repertoire were written to " + params.io.final_stripped_clusters_fa)
 
+
+def LogInfo(log):
+    import sys
+    sys.path.append(home_directory + "/py")
+    import build_info
+    from datetime import datetime
+
+    class LogInfoToDebugAdapter:
+        def __init__(self, log):
+            self.log__ = log
+        def info(self, *args, **kwargs):
+            self.log__.debug(*args, **kwargs)
+
+    class LogShiftAdapter:
+        def __init__(self, log, shift=8):
+            self.log__ = log
+            self.shift__ = shift
+        def info(self, msg):
+            self.log__.info(" " * self.shift__ + msg)
+
+    log.info("Build info:")
+    shlog = LogShiftAdapter(log)
+    build_info.Log(shlog)
+
+    log.info("\n")
+    dt = datetime.utcnow()
+    log.info("Current time (UTC ISO): " + dt.isoformat())
+    log.info("\n")
+
+
 #######################################################################################
 #           Main
 #######################################################################################
@@ -1000,6 +1046,7 @@ def main():
     PrintParams(params, log)
     PrintCommandLine(log)
     params.io = IgRepConIO(params.output, log)
+    LogInfo(log)
 
     try:
         ig_phase_factory = PhaseFactory(PhaseNames(), params, log)
@@ -1007,11 +1054,7 @@ def main():
         if params.left_reads:
             ig_repertoire_constructor.Run(start_phase=0)
         else:
-            if params.no_alignment:
-                params.io.cropped_reads = params.single_reads
-                ig_repertoire_constructor.Run(start_phase=2)
-            else:
-                ig_repertoire_constructor.Run(start_phase=1)
+            ig_repertoire_constructor.Run(start_phase=1)
         RemoveAuxFiles(params)
         PrintOutputFiles(params, log)
         log.info("\nThank you for using IgReC!")
