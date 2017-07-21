@@ -12,6 +12,7 @@
 #include <build_info.hpp>
 #include "utils.hpp"
 #include "fast_ig_tools.hpp"
+#include "ig_final_alignment.hpp"
 
 #include <seqan/seq_io.h>
 
@@ -309,8 +310,15 @@ public:
     virtual ~DummySplitterAlgorithm() {}
 
     virtual std::vector<Component<std::string> > SplitComponent(Component<std::string> &component) override {
-        // TODO...
-        component.Consensus() = component[0]->read;
+        std::vector<seqan::Dna5String> reads;
+
+        std::transform(component.begin(), component.end(),
+                       std::back_inserter(reads),
+                       [](std::shared_ptr<Read>& r) -> seqan::Dna5String {
+                           return r->read;
+                       });
+
+        component.Consensus() = consensus(reads);
         return { component };
     }
 };
