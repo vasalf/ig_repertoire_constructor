@@ -65,8 +65,8 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
         }
     };
     
-    void split_component(Component component,
-                         std::vector<Component> res,
+    void split_component(Component &component,
+                         std::vector<Component> &res,
                          std::size_t max_votes) {
         if (component.empty())
             return;
