@@ -80,7 +80,7 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
         if (max_votes == 0)
             max_votes = std::numeric_limits<std::size_t>::max() / 2;
 
-        std::vector<seq_string_t> reads_in_component = component.GetReadSequences();
+        const std::vector<seq_string_t>& reads_in_component = component.GetReadSequences();
         
         profile_string_t profile;
         std::size_t len = seqan::length(*max_element(reads_in_component.begin(), reads_in_component.end(),
@@ -141,7 +141,14 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
             do_split = false;
 
         if (!do_split) {
-            component.Consensus() = consensus(reads_in_component);
+            seq_string_t consensus;
+            for (std::size_t i = 0; i != length(profile); i++) {
+                std::size_t idx = seqan::getMaxIndex(profile[i]);
+                if (idx < seqan::ValueSize<char_t>::VALUE) { // is not gap  TODO Check it!!
+                    seqan::appendValue(consensus, char_t(idx));
+                }
+            }
+            component.Consensus() = consensus;
             res.push_back(component);
             return;
         }
@@ -149,9 +156,9 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
         Component majory(component.GetId()), secondary(component.GetId());
         std::vector<ReadPtr> other;
         for (ReadPtr& read : component) {
-            if (read->read[maximal_mismatch.position] == maximal_mismatch.majory_letter)
+            if (seqan::ordValue(read->read[maximal_mismatch.position]) == maximal_mismatch.majory_letter)
                 majory.push_back(read);
-            else if (read->read[maximal_mismatch.position] == maximal_mismatch.secondary_letter)
+            else if (seqan::ordValue(read->read[maximal_mismatch.position]) == maximal_mismatch.secondary_letter)
                 secondary.push_back(read);
             else
                 other.push_back(read);
