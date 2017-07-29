@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
     if (!input.ReadData(cfg))
         return 1;
 
-    IgComponentSplitterProcessor<StdUnorderedMapTag> processor(cfg, input);
+    IgComponentSplitterParallelProcessor<StdUnorderedMapTag> processor(cfg, input);
     processor.Process();
 
     INFO("Running time: " << running_time_format(pc));
