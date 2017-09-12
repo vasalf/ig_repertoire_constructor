@@ -38,7 +38,7 @@ public:
     virtual ~DummySplitterAlgorithm() = default;
 
     virtual std::vector<Component> SplitComponent(Component &component) override {
-        component.Consensus() = consensus(component.GetReadSequences());
+        component.consensus = consensus(component.GetReadSequences());
         return { component };
     }
 };
@@ -55,11 +55,11 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
     };
 
     struct PositionVote {
-        std::size_t majory_votes;
-        std::size_t majory_letter;
-        std::size_t secondary_votes;
-        std::size_t secondary_letter;
-        std::size_t position;
+        size_t majory_votes;
+        size_t majory_letter;
+        size_t secondary_votes;
+        size_t secondary_letter;
+        size_t position;
         bool operator<(const PositionVote &other) const {
             return secondary_votes < other.secondary_votes;
         }
@@ -67,42 +67,45 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
     
     void split_component(Component &component,
                          std::vector<Component> &res,
-                         std::size_t max_votes) {
-        if (component.empty())
+                         size_t max_votes) {
+        if (component.empty()) {
             return;
-        else if (component.size() == 1) {
-            component.Consensus() = component[0]->read;
+        } else if (component.size() == 1) {
+            component.consensus = component[0]->read;
             res.push_back(component);
             return;
         }
 
         // What?
-        if (max_votes == 0)
-            max_votes = std::numeric_limits<std::size_t>::max() / 2;
+        if (max_votes == 0) {
+            max_votes = std::numeric_limits<size_t>::max() / 2;
+        }
 
         const std::vector<seq_string_t>& reads_in_component = component.GetReadSequences();
         
         profile_string_t profile;
-        std::size_t len = seqan::length(*max_element(reads_in_component.begin(), reads_in_component.end(),
+        size_t len = seqan::length(*max_element(reads_in_component.begin(), reads_in_component.end(),
                                                      SeqanLengthCompare<seqan::Dna5String>()));
         seqan::resize(profile, len);
 
         for (const seq_string_t& read : reads_in_component) {
-            for (std::size_t j = 0; j != length(read); j++)
+            for (size_t j = 0; j != length(read); j++) {
                 profile[j].count[seqan::ordValue(read[j])]++;
+            }
         }
 
-        std::size_t min_len = seqan::length(*min_element(reads_in_component.begin(), reads_in_component.end(),
+        size_t min_len = seqan::length(*min_element(reads_in_component.begin(), reads_in_component.end(),
                                                          SeqanLengthCompare<seqan::Dna5String>()));
         std::vector<PositionVote> votes(min_len);
-        for (std::size_t i = 0; i != min_len; i++) {
-            std::array<std::pair<std::size_t, std::size_t>, seqan::ValueSize<char_t>::VALUE> letters;
-            for (std::size_t k = 0; k < seqan::valueSize<char_t>(); k++)
+        for (size_t i = 0; i != min_len; i++) {
+            std::array<std::pair<size_t, size_t>, seqan::ValueSize<char_t>::VALUE> letters;
+            for (size_t k = 0; k < seqan::valueSize<char_t>(); k++) {
                 letters[k] = std::make_pair(profile[i].count[k], k);
+            }
 
 
             std::nth_element(letters.begin(), letters.begin() + 1, letters.end(),
-                             std::greater<std::pair<std::size_t, std::size_t> >());
+                             std::greater<std::pair<size_t, size_t> >());
 
             PositionVote vote;
             std::tie(vote.majory_votes, vote.majory_letter) = letters[0];
@@ -119,7 +122,7 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
               << " POSITION: " << maximal_mismatch.position);
 
         bool do_split = false;
-        std::size_t mmsv = maximal_mismatch.secondary_votes;
+        size_t mmsv = maximal_mismatch.secondary_votes;
 
         // Uhm.
         if (this->cfg().flu) {
@@ -134,21 +137,23 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
         } else {
             do_split = mmsv >= max_votes;
         }
-        if (component.size() <= 5)
+        if (component.size() <= 5) {
             do_split = false;
+        }
         // What??
-        if (max_votes > component.size())
+        if (max_votes > component.size()) {
             do_split = false;
+        }
 
         if (!do_split) {
             seq_string_t consensus;
-            for (std::size_t i = 0; i != length(profile); i++) {
-                std::size_t idx = seqan::getMaxIndex(profile[i]);
+            for (size_t i = 0; i != length(profile); i++) {
+                size_t idx = seqan::getMaxIndex(profile[i]);
                 if (idx < seqan::ValueSize<char_t>::VALUE) { // is not gap  TODO Check it!!
                     seqan::appendValue(consensus, char_t(idx));
                 }
             }
-            component.Consensus() = consensus;
+            component.consensus = consensus;
             res.push_back(component);
             return;
         }
@@ -156,12 +161,13 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
         Component majory(component.GetId()), secondary(component.GetId());
         std::vector<ReadPtr> other;
         for (ReadPtr& read : component) {
-            if (seqan::ordValue(read->read[maximal_mismatch.position]) == maximal_mismatch.majory_letter)
+            if (seqan::ordValue(read->read[maximal_mismatch.position]) == maximal_mismatch.majory_letter) {
                 majory.push_back(read);
-            else if (seqan::ordValue(read->read[maximal_mismatch.position]) == maximal_mismatch.secondary_letter)
+            } else if (seqan::ordValue(read->read[maximal_mismatch.position]) == maximal_mismatch.secondary_letter) {
                 secondary.push_back(read);
-            else
+            } else {
                 other.push_back(read);
+            }
         }
 
         VERIFY(majory.size() == maximal_mismatch.majory_votes);
@@ -174,10 +180,11 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
             auto dist_majory = hamming_rtrim(read->read, majory_consensus);
             auto dist_secondary = hamming_rtrim(read->read, secondary_consensus);
 
-            if (dist_majory <= dist_secondary)
+            if (dist_majory <= dist_secondary) {
                 majory.push_back(read);
-            else
+            } else {
                 other.push_back(read);
+            }
         }
 
         VERIFY(majory.size() + secondary.size() == component.size());
@@ -185,8 +192,9 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
         INFO("Component splitted " << majory.size() << " + " << secondary.size());
 
         // What?
-        if (!this->cfg().recursive)
+        if (!this->cfg().recursive) {
             max_votes = 0;
+        }
 
         split_component(majory, res, max_votes);
 
@@ -194,7 +202,7 @@ class LegacySplitterAlgorithm : public SplitterAlgorithm<map_type> {
             for (ReadPtr& read : secondary) {
                 Component c(secondary.GetId());
                 c.push_back(read);
-                c.Consensus() = read->read;
+                c.consensus = read->read;
                 res.push_back(c);
             }
         } else {

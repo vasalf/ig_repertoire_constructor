@@ -39,10 +39,12 @@ class InputData {
         while (std::getline(rcm, line)) {
             std::vector<std::string> strs;
             boost::split(strs, line, boost::is_any_of("\t"));
-            for (std::string &s : strs)
+            for (std::string &s : strs) {
                 boost::trim(s);
-            if (strs.size() == 2 && strs[0] != "" && strs[1] != "")
+            }
+            if (strs.size() == 2 && strs[0] != "" && strs[1] != "") {
                 rcm_[strs[0]] = strs[1];
+            }
         }
         return true;
     }
@@ -73,11 +75,12 @@ public:
         INFO(input_reads.size() << " reads were extracted from " << cfg.reads_file);
 
         INFO("Reading read-cluster map starts");
-        if (!read_rcm_file(cfg.rcm_file))
+        if (!read_rcm_file(cfg.rcm_file)) {
             return false;
+        }
 
-        std::size_t assigned_reads = 0;
-        for (std::size_t i = 0; i != input_reads.size(); i++) {
+        size_t assigned_reads = 0;
+        for (size_t i = 0; i != input_reads.size(); i++) {
             std::string id = seqan::toCString(input_ids[i]);
             if (rcm_.count(id)) {
                 assigned_reads++;
@@ -97,7 +100,7 @@ public:
 
         INFO(components_.size() << " clusters were extracted from " << cfg.rcm_file);
 
-        std::size_t max_component_size = 0;
+        size_t max_component_size = 0;
         for (const auto& kv : components_) {
             max_component_size = std::max(max_component_size, kv.second.size());
         }

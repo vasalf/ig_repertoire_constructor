@@ -20,8 +20,9 @@ namespace ig_component_splitter {
 
     class Component : public std::vector<ReadPtr> {
         id_string_t id_;
-        seq_string_t consensus_;
     public:
+        seq_string_t consensus;
+
         Component() {}
 
         Component(const id_string_t& id)
@@ -36,10 +37,6 @@ namespace ig_component_splitter {
 
         bool operator<(const Component &other) const {
             return id_ < other.id_;
-        }
-
-        seq_string_t &Consensus() {
-            return consensus_;
         }
 
         std::vector<seq_string_t> GetReadSequences() const;

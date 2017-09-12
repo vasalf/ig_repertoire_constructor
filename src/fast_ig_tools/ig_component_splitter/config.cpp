@@ -51,7 +51,7 @@ void IgComponentSplitterConfig::ReadOptions(int argc, char **argv) {
     config.add_options()
         ("threads,t", po::value<int>(&nthreads)->default_value(nthreads),
          "the number of parallel threads")
-        ("max-votes,V", po::value<std::size_t>(&max_votes)->default_value(max_votes),
+        ("max-votes,V", po::value<size_t>(&max_votes)->default_value(max_votes),
          "max secondary votes threshold")
         ("discard,D", po::value<bool>(&discard)->default_value(discard),
          "whether to discard secondary votes")

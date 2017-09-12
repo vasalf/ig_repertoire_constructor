@@ -53,8 +53,9 @@ int main(int argc, char *argv[]) {
     cfg.Write();
 
     InputData<StdUnorderedMapTag> input;
-    if (!input.ReadData(cfg))
+    if (!input.ReadData(cfg)) {
         return 1;
+    }
 
     IgComponentSplitterParallelProcessor<StdUnorderedMapTag> processor(cfg, input);
     processor.Process();

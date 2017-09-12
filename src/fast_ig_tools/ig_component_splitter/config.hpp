@@ -15,7 +15,7 @@ struct IgComponentSplitterConfig {
 
     // Launch options
     int nthreads = 4;
-    std::size_t max_votes = std::numeric_limits<std::size_t>::max() / 2;
+    size_t max_votes = std::numeric_limits<size_t>::max() / 2;
     bool discard = false;
     bool recursive = false;
     bool flu = false;
