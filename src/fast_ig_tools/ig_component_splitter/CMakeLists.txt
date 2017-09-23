@@ -15,5 +15,8 @@ add_executable(ig_component_splitter
   ig_component_splitter.cpp
   utils.cpp
   config.cpp
-  component.cpp)
+  component.cpp
+  input_data.cpp
+  splitter_algorithm.cpp
+  processor.cpp)
 target_link_libraries(ig_component_splitter build_info)

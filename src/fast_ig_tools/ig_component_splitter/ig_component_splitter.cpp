@@ -52,12 +52,12 @@ int main(int argc, char *argv[]) {
     }
     cfg.Write();
 
-    InputData<StdUnorderedMapTag> input;
+    InputData input;
     if (!input.ReadData(cfg)) {
         return 1;
     }
 
-    IgComponentSplitterParallelProcessor<StdUnorderedMapTag> processor(cfg, input);
+    IgComponentSplitterParallelProcessor processor(cfg, input);
     processor.Process();
 
     INFO("Running time: " << running_time_format(pc));
